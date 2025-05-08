@@ -9,7 +9,11 @@ import {
   Switch,
   Alert,
   Dimensions,
-  Animated
+  Animated,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -75,6 +79,34 @@ const MOCK_PARTNERS = [
   },
 ];
 
+// Define message type
+type Message = {
+  id: string;
+  text: string;
+  sender: 'user' | 'partner';
+  timestamp: string;
+};
+
+// Mock data for chat messages
+const MOCK_MESSAGES: Record<string, Message[]> = {
+  '1': [
+    { id: '1', text: 'Hi! I saw we matched. Would you like to train together sometime?', sender: 'partner', timestamp: '10:30 AM' },
+    { id: '2', text: 'Hey! Sure, I usually go to the gym around 6 PM on weekdays. Does that work for you?', sender: 'user', timestamp: '10:32 AM' },
+    { id: '3', text: 'Perfect! I can do 6 PM on Wednesday and Friday this week.', sender: 'partner', timestamp: '10:35 AM' },
+    { id: '4', text: 'Great! Let\'s meet at the entrance on Wednesday at 6 PM. I\'m focusing on upper body this week.', sender: 'user', timestamp: '10:37 AM' },
+    { id: '5', text: 'Sounds good! I\'ll be there. Looking forward to it!', sender: 'partner', timestamp: '10:38 AM' },
+  ],
+  '2': [
+    { id: '1', text: 'Hello! I see we have similar fitness goals. Would you be interested in a training session?', sender: 'partner', timestamp: '2:15 PM' },
+    { id: '2', text: 'Hi there! Yes, I\'d love to. What\'s your usual routine?', sender: 'user', timestamp: '2:20 PM' },
+  ],
+  '3': [
+    { id: '1', text: 'Hey! I noticed we matched. I\'m looking for a running partner. Do you run?', sender: 'partner', timestamp: '9:45 AM' },
+  ],
+  '4': [],
+  '5': [],
+};
+
 export default function TrainingPartners() {
   const router = useRouter();
   const [partners, setPartners] = useState(MOCK_PARTNERS);
@@ -82,6 +114,14 @@ export default function TrainingPartners() {
   const [matchedPartners, setMatchedPartners] = useState<typeof MOCK_PARTNERS>([]);
   const [showMatches, setShowMatches] = useState(false);
   const swiperRef = useRef<any>(null);
+  
+  // Chat state
+  const [chatVisible, setChatVisible] = useState(false);
+  const [selectedPartner, setSelectedPartner] = useState<typeof MOCK_PARTNERS[0] | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const flatListRef = useRef<FlatList>(null);
   
   // Animation values for card actions
   const [likeOpacity] = useState(new Animated.Value(0));
@@ -270,20 +310,190 @@ export default function TrainingPartners() {
     );
   };
   
+  const openChat = (partner: typeof MOCK_PARTNERS[0]) => {
+    setSelectedPartner(partner);
+    // Load mock messages based on partner ID
+    if (partner.id && MOCK_MESSAGES[partner.id]) {
+      setMessages(MOCK_MESSAGES[partner.id] || []);
+    } else {
+      setMessages([]);
+    }
+    setChatVisible(true);
+  };
+
+  const sendMessage = () => {
+    if (inputText.trim() === '') return;
+    
+    // Add user message
+    const newUserMessage: Message = {
+      id: Date.now().toString(),
+      text: inputText,
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    
+    setMessages(prev => [...prev, newUserMessage]);
+    setInputText('');
+    
+    // Simulate partner typing
+    setIsTyping(true);
+    
+    // Simulate partner response after a delay
+    setTimeout(() => {
+      const responses = [
+        "That sounds great! When would you like to meet up?",
+        "I'm available this weekend for a training session. How about you?",
+        "Perfect! I've been looking for someone to train with.",
+        "I usually go to the gym in the evenings. Does that work for you?",
+        "Great! I'm focusing on strength training this week. What about you?",
+        "Awesome! Let's plan our first workout session.",
+        "I'm excited to train together! What's your fitness goal?",
+      ];
+      
+      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+      
+      const newPartnerMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: randomResponse,
+        sender: 'partner',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      
+      setMessages(prev => [...prev, newPartnerMessage]);
+      setIsTyping(false);
+    }, 1500);
+  };
+
+  const scheduleWorkout = () => {
+    if (!selectedPartner) return;
+    
+    const workoutMessage: Message = {
+      id: Date.now().toString(),
+      text: "I'd like to schedule a workout with you. How about tomorrow at 6 PM?",
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    
+    setMessages(prev => [...prev, workoutMessage]);
+    
+    // Simulate partner typing
+    setIsTyping(true);
+    
+    // Simulate partner response after a delay
+    setTimeout(() => {
+      const confirmationMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: "Tomorrow at 6 PM works perfectly for me! I'll meet you at the gym entrance. Looking forward to it! 💪",
+        sender: 'partner',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      
+      setMessages(prev => [...prev, confirmationMessage]);
+      setIsTyping(false);
+    }, 1500);
+  };
+
+  const renderMessage = ({ item }: { item: Message }) => {
+    const isUser = item.sender === 'user';
+    
+    return (
+      <View style={[styles.messageContainer, isUser ? styles.userMessageContainer : styles.partnerMessageContainer]}>
+        {!isUser && selectedPartner && (
+          <Image 
+            source={{ uri: selectedPartner.avatar }} 
+            style={styles.messageAvatar} 
+          />
+        )}
+        <View style={[styles.messageBubble, isUser ? styles.userMessageBubble : styles.partnerMessageBubble]}>
+          <Text style={styles.messageText}>{item.text}</Text>
+          <Text style={styles.messageTimestamp}>{item.timestamp}</Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderChatModal = () => {
+    if (!selectedPartner) return null;
+    
+    return (
+      <Modal
+        visible={chatVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setChatVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.chatContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        >
+          <View style={styles.chatHeader}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => setChatVisible(false)}
+            >
+              <Ionicons name="arrow-back" size={24} color="#333" />
+            </TouchableOpacity>
+            <Image source={{ uri: selectedPartner.avatar || '' }} style={styles.chatHeaderAvatar} />
+            <View style={styles.chatHeaderInfo}>
+              <Text style={styles.chatHeaderName}>{selectedPartner.name}</Text>
+              <Text style={styles.chatHeaderStatus}>Online</Text>
+            </View>
+            <TouchableOpacity style={styles.scheduleButton} onPress={scheduleWorkout}>
+              <Ionicons name="calendar" size={24} color="#4CAF50" />
+            </TouchableOpacity>
+          </View>
+          
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.messagesList}
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          />
+          
+          {isTyping && (
+            <View style={styles.typingContainer}>
+              <Image source={{ uri: selectedPartner.avatar || '' }} style={styles.typingAvatar} />
+              <View style={styles.typingBubble}>
+                <View style={styles.typingIndicator}>
+                  <View style={styles.typingDot} />
+                  <View style={styles.typingDot} />
+                  <View style={styles.typingDot} />
+                </View>
+              </View>
+            </View>
+          )}
+          
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Type a message..."
+              placeholderTextColor="#999"
+              multiline
+            />
+            <TouchableOpacity 
+              style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+              onPress={sendMessage}
+              disabled={!inputText.trim()}
+            >
+              <Ionicons name="send" size={24} color={inputText.trim() ? "#4CAF50" : "#ccc"} />
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  };
+
   const renderMatchItem = (item: typeof MOCK_PARTNERS[0], index: number) => (
     <TouchableOpacity 
       key={item.id} 
       style={styles.matchItem}
-      onPress={() => {
-        Alert.alert(
-          'Start Training',
-          `Would you like to message ${item.name} to set up a training session?`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Message', onPress: () => console.log(`Messaging ${item.name}`) }
-          ]
-        );
-      }}
+      onPress={() => openChat(item)}
     >
       <Image source={{ uri: item.avatar }} style={styles.matchAvatar} />
       <Text style={styles.matchName}>{item.name}</Text>
@@ -325,6 +535,8 @@ export default function TrainingPartners() {
           </View>
         </View>
       </View>
+      
+      {renderChatModal()}
       
       {!showMatches ? (
         <View style={styles.swiperContainer}>
@@ -483,6 +695,141 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
     padding: 16,
+  },
+  // Chat styles
+  chatContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  backButton: {
+    marginRight: 12,
+  },
+  chatHeaderAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  chatHeaderInfo: {
+    flex: 1,
+  },
+  chatHeaderName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  chatHeaderStatus: {
+    fontSize: 12,
+    color: '#4CAF50',
+  },
+  scheduleButton: {
+    padding: 8,
+  },
+  messagesList: {
+    padding: 16,
+  },
+  messageContainer: {
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  userMessageContainer: {
+    justifyContent: 'flex-end',
+  },
+  partnerMessageContainer: {
+    justifyContent: 'flex-start',
+  },
+  messageAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  messageBubble: {
+    maxWidth: '70%',
+    padding: 12,
+    borderRadius: 16,
+  },
+  userMessageBubble: {
+    backgroundColor: '#4CAF50',
+    borderBottomRightRadius: 4,
+  },
+  partnerMessageBubble: {
+    backgroundColor: '#E8E8E8',
+    borderBottomLeftRadius: 4,
+  },
+  messageText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  messageTimestamp: {
+    fontSize: 10,
+    color: '#777',
+    alignSelf: 'flex-end',
+    marginTop: 4,
+  },
+  typingContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  typingAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  typingBubble: {
+    backgroundColor: '#E8E8E8',
+    padding: 12,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+  },
+  typingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#777',
+    marginRight: 3,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#f1f1f1',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    maxHeight: 100,
+  },
+  sendButton: {
+    marginLeft: 8,
+    padding: 8,
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
   },
   header: {
     flexDirection: 'row',

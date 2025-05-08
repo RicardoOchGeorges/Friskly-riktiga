@@ -137,6 +137,10 @@ export default function Challenges() {
   const [selectedChallenge, setSelectedChallenge] = useState<typeof MOCK_CHALLENGES[0] | null>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<typeof MOCK_COMPETITIONS[0] | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [rewardsModalVisible, setRewardsModalVisible] = useState(false);
+  const [userPoints, setUserPoints] = useState(750);
+  const [completedChallenges, setCompletedChallenges] = useState<string[]>([]);
+  const [claimedRewards, setClaimedRewards] = useState<string[]>([]);
 
   const handleChallengeSelect = (challenge: typeof MOCK_CHALLENGES[0]) => {
     setSelectedChallenge(challenge);
@@ -151,11 +155,23 @@ export default function Challenges() {
   };
 
   const handleJoinChallenge = () => {
-    Alert.alert(
-      'Challenge Joined',
-      'You have successfully joined this challenge. Good luck!',
-      [{ text: 'OK', onPress: () => setModalVisible(false) }]
-    );
+    if (selectedChallenge) {
+      // Check if challenge is already completed
+      if (completedChallenges.includes(selectedChallenge.id)) {
+        Alert.alert(
+          'Already Completed',
+          'You have already completed this challenge!',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      Alert.alert(
+        'Challenge Joined',
+        'You have successfully joined this challenge. Good luck!',
+        [{ text: 'OK', onPress: () => setModalVisible(false) }]
+      );
+    }
   };
 
   const handleJoinCompetition = () => {
@@ -164,6 +180,67 @@ export default function Challenges() {
       'You have successfully joined this competition. Good luck!',
       [{ text: 'OK', onPress: () => setModalVisible(false) }]
     );
+  };
+  
+  const handleCompleteChallenge = () => {
+    if (selectedChallenge && !completedChallenges.includes(selectedChallenge.id)) {
+      // Add points based on difficulty
+      let pointsEarned = 0;
+      switch (selectedChallenge.difficulty) {
+        case 'Beginner':
+          pointsEarned = 100;
+          break;
+        case 'Intermediate':
+          pointsEarned = 200;
+          break;
+        case 'Advanced':
+          pointsEarned = 300;
+          break;
+        default:
+          pointsEarned = 100;
+      }
+      
+      setUserPoints(prev => prev + pointsEarned);
+      setCompletedChallenges(prev => [...prev, selectedChallenge.id]);
+      
+      Alert.alert(
+        'Challenge Completed!',
+        `Congratulations! You've earned ${pointsEarned} points. You now have ${userPoints + pointsEarned} points total.`,
+        [{ text: 'OK', onPress: () => setModalVisible(false) }]
+      );
+    }
+  };
+  
+  const handleClaimReward = (rewardId: string, rewardName: string, rewardPoints: number) => {
+    if (userPoints >= rewardPoints) {
+      if (claimedRewards.includes(rewardId)) {
+        Alert.alert(
+          'Already Claimed',
+          'You have already claimed this reward!',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      setUserPoints(prev => prev - rewardPoints);
+      setClaimedRewards(prev => [...prev, rewardId]);
+      
+      Alert.alert(
+        'Reward Claimed!',
+        `You have successfully redeemed ${rewardName}. It will be delivered to you shortly.`,
+        [{ text: 'OK', onPress: () => setRewardsModalVisible(false) }]
+      );
+    } else {
+      Alert.alert(
+        'Insufficient Points',
+        `You need ${rewardPoints - userPoints} more points to claim this reward.`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
+  
+  const openRewardsModal = () => {
+    setRewardsModalVisible(true);
   };
 
   const renderChallengeItem = ({ item }: { item: typeof MOCK_CHALLENGES[0] }) => (
@@ -304,12 +381,26 @@ export default function Challenges() {
                   </View>
                 </View>
                 
-                <TouchableOpacity 
-                  style={styles.joinButton}
-                  onPress={handleJoinChallenge}
-                >
-                  <Text style={styles.joinButtonText}>Join Challenge</Text>
-                </TouchableOpacity>
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity 
+                    style={[styles.joinButton, completedChallenges.includes(selectedChallenge.id) && styles.completedButton]}
+                    onPress={handleJoinChallenge}
+                    disabled={completedChallenges.includes(selectedChallenge.id)}
+                  >
+                    <Text style={styles.joinButtonText}>
+                      {completedChallenges.includes(selectedChallenge.id) ? 'Completed' : 'Join Challenge'}
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  {!completedChallenges.includes(selectedChallenge.id) && (
+                    <TouchableOpacity 
+                      style={styles.completeButton}
+                      onPress={handleCompleteChallenge}
+                    >
+                      <Text style={styles.joinButtonText}>Mark as Complete</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </ScrollView>
           </View>
@@ -392,10 +483,77 @@ export default function Challenges() {
     }
   };
 
+  const renderRewardItem = ({ item }: { item: typeof REWARDS[0] }) => (
+    <View style={styles.rewardCard}>
+      <Image source={{ uri: item.image }} style={styles.rewardImage} />
+      <View style={styles.rewardContent}>
+        <Text style={styles.rewardName}>{item.name}</Text>
+        <Text style={styles.rewardPoints}>{item.points} points</Text>
+        <TouchableOpacity 
+          style={[styles.claimButton, userPoints < item.points || claimedRewards.includes(item.id) ? styles.claimButtonDisabled : null]}
+          onPress={() => handleClaimReward(item.id, item.name, item.points)}
+          disabled={userPoints < item.points || claimedRewards.includes(item.id)}
+        >
+          <Text style={styles.claimButtonText}>
+            {claimedRewards.includes(item.id) ? 'Claimed' : 'Claim Reward'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderRewardsModal = () => (
+    <Modal
+      visible={rewardsModalVisible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={() => setRewardsModalVisible(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <TouchableOpacity 
+            style={styles.closeButton}
+            onPress={() => setRewardsModalVisible(false)}
+          >
+            <Ionicons name="close" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Redeem Rewards</Text>
+          <View style={styles.pointsContainer}>
+            <Ionicons name="trophy" size={20} color="#FFD700" />
+            <Text style={styles.pointsText}>{userPoints} points</Text>
+          </View>
+        </View>
+        
+        <FlatList
+          data={REWARDS}
+          renderItem={renderRewardItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.rewardsList}
+        />
+      </View>
+    </Modal>
+  );
+
+  // Available rewards that can be redeemed with points
+  const REWARDS = [
+    { id: 'r1', name: 'Friskly Water Bottle', points: 300, image: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80' },
+    { id: 'r2', name: 'Premium Protein Shaker', points: 500, image: 'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80' },
+    { id: 'r3', name: 'Training Gloves', points: 700, image: 'https://images.unsplash.com/photo-1517344884509-a0c97ec11bcc?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80' },
+    { id: 'r4', name: 'Smart Water Bottle', points: 1000, image: 'https://images.unsplash.com/photo-1595341888016-a392ef81b7de?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80' },
+    { id: 'r5', name: 'Resistance Bands Set', points: 1200, image: 'https://images.unsplash.com/photo-1598971639058-a09ec80c297a?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80' },
+    { id: 'r6', name: '1-Month Gym Membership', points: 2000, image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80' },
+  ];
+  
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Challenges & Competitions</Text>
+        <Text style={styles.title}>Rewards</Text>
+        <TouchableOpacity style={styles.pointsButton} onPress={openRewardsModal}>
+          <View style={styles.pointsIconContainer}>
+            <Ionicons name="gift" size={22} color="#FFFFFF" />
+          </View>
+          <Text style={styles.pointsButtonText}>{userPoints} pts</Text>
+        </TouchableOpacity>
       </View>
       
       <View style={styles.tabContainer}>
@@ -436,6 +594,7 @@ export default function Challenges() {
       )}
       
       {renderChallengeModal()}
+      {renderRewardsModal()}
     </View>
   );
 }
@@ -449,11 +608,36 @@ const styles = StyleSheet.create({
   header: {
     marginTop: 40,
     marginBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
+  },
+  pointsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 20,
+    padding: 4,
+    paddingRight: 12,
+  },
+  pointsIconContainer: {
+    backgroundColor: '#4CAF50',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  pointsButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4CAF50',
   },
   tabContainer: {
     flexDirection: 'row',
@@ -753,10 +937,104 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  completedButton: {
+    backgroundColor: '#9E9E9E',
+  },
+  completeButton: {
+    backgroundColor: '#2196F3',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 8,
+    flex: 1,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   joinButtonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: 'bold',
+  },
+  pointsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  pointsButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  pointsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  pointsText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  rewardsList: {
+    padding: 16,
+  },
+  rewardCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  rewardImage: {
+    width: 100,
+    height: 100,
+  },
+  rewardContent: {
+    flex: 1,
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  rewardName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  rewardPoints: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  claimButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  claimButtonDisabled: {
+    backgroundColor: '#9E9E9E',
+  },
+  claimButtonText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: 'bold',
   },
   dateSection: {

@@ -64,9 +64,9 @@ export default function DashboardLayout() {
       <Tabs.Screen
         name="challenges"
         options={{
-          title: 'Challenges',
+          title: 'Rewards',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trophy-outline" size={size} color={color} />
+            <Ionicons name="gift-outline" size={size} color={color} />
           ),
         }}
       />

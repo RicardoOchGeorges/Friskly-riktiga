@@ -1,8 +1,13 @@
-import { StyleSheet, Text, View, TouchableOpacity, FlatList, Alert, RefreshControl } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, FlatList, Alert, RefreshControl, Modal, TextInput, ScrollView, ActivityIndicator, Image } from 'react-native';
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+import { analyzeFoodImage, DetectedFoodItem } from '../../lib/vision-api';
+import FoodCoach from '../../lib/food-coach';
+import { Ionicons } from '@expo/vector-icons';
 
 // Define types for meal data
 interface Meal {
@@ -21,11 +26,36 @@ interface DaySection {
   meals: Meal[];
 }
 
+// Define types for meal items when adding a new meal
+interface MealItem {
+  id: number;
+  name: string;
+  calories: string;
+  protein: string;
+  carbs: string;
+  fat: string;
+}
+
 export default function Meals() {
   const { user } = useAuth();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Add meal state
+  const [addMealModalVisible, setAddMealModalVisible] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [mealName, setMealName] = useState('');
+  const [image, setImage] = useState<string | null>(null);
+  
+  // Food coach state
+  const [showFoodCoach, setShowFoodCoach] = useState(false);
+  const [detectedFoodNames, setDetectedFoodNames] = useState<string[]>([]);
+  
+  const [mealItems, setMealItems] = useState<MealItem[]>([
+    { id: 1, name: '', calories: '', protein: '', carbs: '', fat: '' }
+  ]);
   
   // Meal history data
   const [mealHistory, setMealHistory] = useState<DaySection[]>([
@@ -63,9 +93,350 @@ export default function Meals() {
     loadMeals();
   }, []);
   
-  const navigateToAddMeal = () => {
-    router.push('/dashboard/add-meal');
+  const openAddMealModal = () => {
+    // Reset form state
+    setMealName('');
+    setImage(null);
+    setMealItems([{ id: 1, name: '', calories: '', protein: '', carbs: '', fat: '' }]);
+    setShowFoodCoach(false);
+    setAddMealModalVisible(true);
   };
+  
+  // Launch camera to take a photo
+  const takePicture = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Sorry, we need camera permissions to make this work!');
+      return;
+    }
+    
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+      analyzeImage(result.assets[0].uri);
+    }
+  };
+
+  // Pick an image from the gallery
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+      analyzeImage(result.assets[0].uri);
+    }
+  };
+  
+  // Use Google Cloud Vision API to analyze food image
+  const analyzeImage = async (imageUri: string) => {
+    if (!imageUri) {
+      Alert.alert('Error', 'No image to analyze');
+      return;
+    }
+    
+    setIsAnalyzing(true);
+    
+    try {
+      // Call the Vision API to analyze the image
+      const detectedItems = await analyzeFoodImage(imageUri);
+      
+      if (detectedItems.length > 0) {
+        // Set a default meal name based on time of day
+        const hour = new Date().getHours();
+        let mealNameSuggestion = 'Snack';
+        
+        if (hour >= 5 && hour < 10) {
+          mealNameSuggestion = 'Breakfast';
+        } else if (hour >= 10 && hour < 14) {
+          mealNameSuggestion = 'Lunch';
+        } else if (hour >= 17 && hour < 22) {
+          mealNameSuggestion = 'Dinner';
+        }
+        
+        setMealName(mealNameSuggestion);
+        setMealItems(detectedItems);
+        
+        // Extract food names for the food coach
+        const foodNames = detectedItems.map(item => item.name).filter(name => name.trim() !== '');
+        setDetectedFoodNames(foodNames);
+        
+        if (foodNames.length > 0) {
+          setShowFoodCoach(true);
+        }
+      } else {
+        Alert.alert('No food detected', 'Try taking a clearer picture of your meal');
+      }
+    } catch (error) {
+      console.error('Error analyzing image:', error);
+      Alert.alert('Error', 'Failed to analyze the image');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+  
+  // Add a new empty meal item
+  const addMealItem = () => {
+    const newId = mealItems.length > 0 ? Math.max(...mealItems.map(item => item.id)) + 1 : 1;
+    setMealItems([...mealItems, { id: newId, name: '', calories: '', protein: '', carbs: '', fat: '' }]);
+  };
+  
+  // Update a meal item field
+  const updateMealItem = (id: number, field: keyof MealItem, value: string) => {
+    setMealItems(mealItems.map(item => 
+      item.id === id ? { ...item, [field]: value } : item
+    ));
+  };
+  
+  // Remove a meal item
+  const removeMealItem = (id: number) => {
+    if (mealItems.length > 1) {
+      setMealItems(mealItems.filter(item => item.id !== id));
+    } else {
+      // If it's the last item, just clear it
+      setMealItems([{ id: 1, name: '', calories: '', protein: '', carbs: '', fat: '' }]);
+    }
+  };
+  
+  // Save the meal to Supabase
+  const saveMeal = async () => {
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to save a meal');
+      return;
+    }
+    
+    if (!mealName.trim()) {
+      Alert.alert('Error', 'Please enter a meal name');
+      return;
+    }
+    
+    // Validate meal items
+    const validMealItems = mealItems.filter(item => item.name.trim() !== '');
+    if (validMealItems.length === 0) {
+      Alert.alert('Error', 'Please add at least one food item');
+      return;
+    }
+    
+    setIsSaving(true);
+    
+    try {
+      // Calculate totals
+      const totalCalories = validMealItems.reduce((sum, item) => sum + (parseInt(item.calories) || 0), 0);
+      const totalProtein = validMealItems.reduce((sum, item) => sum + (parseInt(item.protein) || 0), 0);
+      const totalCarbs = validMealItems.reduce((sum, item) => sum + (parseInt(item.carbs) || 0), 0);
+      const totalFat = validMealItems.reduce((sum, item) => sum + (parseInt(item.fat) || 0), 0);
+      
+      const now = new Date();
+      const mealDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+      const mealTime = now.toTimeString().split(' ')[0].substring(0, 5); // HH:MM
+      
+      // Insert the meal into Supabase
+      const { data, error } = await supabase
+        .from('meals')
+        .insert({
+          user_id: user.id,
+          name: mealName,
+          meal_date: mealDate,
+          meal_time: mealTime,
+          total_calories: totalCalories,
+          total_protein: totalProtein,
+          total_carbs: totalCarbs,
+          total_fat: totalFat,
+          food_items: validMealItems.map(item => ({
+            name: item.name,
+            calories: parseInt(item.calories) || 0,
+            protein: parseInt(item.protein) || 0,
+            carbs: parseInt(item.carbs) || 0,
+            fat: parseInt(item.fat) || 0,
+          })),
+          image_url: image,
+        })
+        .select();
+      
+      if (error) {
+        throw error;
+      }
+      
+      Alert.alert('Success', 'Meal saved successfully');
+      setAddMealModalVisible(false);
+      loadMeals(); // Refresh the meal list
+    } catch (error) {
+      console.error('Error saving meal:', error);
+      Alert.alert('Error', 'Failed to save the meal');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  
+  // Render the add meal modal
+  const renderAddMealModal = () => (
+    <Modal
+      visible={addMealModalVisible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={() => setAddMealModalVisible(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <TouchableOpacity 
+            style={styles.closeButton}
+            onPress={() => setAddMealModalVisible(false)}
+          >
+            <Ionicons name="close" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Add Meal</Text>
+          <TouchableOpacity 
+            style={styles.saveButton}
+            onPress={saveMeal}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#4CAF50" />
+            ) : (
+              <Ionicons name="checkmark" size={24} color="#4CAF50" />
+            )}
+          </TouchableOpacity>
+        </View>
+        
+        <ScrollView style={styles.modalContent}>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Meal Name</Text>
+            <TextInput
+              style={styles.input}
+              value={mealName}
+              onChangeText={setMealName}
+              placeholder="Enter meal name"
+            />
+          </View>
+          
+          <View style={styles.imageSection}>
+            <View style={styles.imageButtons}>
+              <TouchableOpacity style={styles.imageButton} onPress={takePicture}>
+                <Ionicons name="camera-outline" size={24} color="#4CAF50" />
+                <Text style={styles.imageButtonText}>Take Photo</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.imageButton} onPress={pickImage}>
+                <Ionicons name="image-outline" size={24} color="#4CAF50" />
+                <Text style={styles.imageButtonText}>Choose Photo</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {isAnalyzing && (
+              <View style={styles.analyzingContainer}>
+                <ActivityIndicator size="large" color="#4CAF50" />
+                <Text style={styles.analyzingText}>Analyzing your meal...</Text>
+              </View>
+            )}
+            
+            {image && (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: image }} style={styles.imagePreview} />
+              </View>
+            )}
+          </View>
+          
+          {showFoodCoach && detectedFoodNames.length > 0 && (
+            <View style={styles.foodCoachContainer}>
+              <Text style={styles.foodCoachTitle}>Food Coach Analysis</Text>
+              <FoodCoach foodItems={detectedFoodNames} visible={true} onClose={() => setShowFoodCoach(false)} />
+            </View>
+          )}
+          
+          <Text style={styles.sectionTitle}>Food Items</Text>
+          
+          {mealItems.map((item, index) => (
+            <View key={item.id} style={styles.mealItemContainer}>
+              <View style={styles.mealItemHeader}>
+                <Text style={styles.mealItemTitle}>Item {index + 1}</Text>
+                <TouchableOpacity 
+                  style={styles.removeButton}
+                  onPress={() => removeMealItem(item.id)}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#ff6b6b" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Food Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={item.name}
+                  onChangeText={(value) => updateMealItem(item.id, 'name', value)}
+                  placeholder="Enter food name"
+                />
+              </View>
+              
+              <View style={styles.nutritionRow}>
+                <View style={styles.nutritionInput}>
+                  <Text style={styles.label}>Calories</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={item.calories}
+                    onChangeText={(value) => updateMealItem(item.id, 'calories', value)}
+                    placeholder="0"
+                    keyboardType="numeric"
+                  />
+                </View>
+                
+                <View style={styles.nutritionInput}>
+                  <Text style={styles.label}>Protein (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={item.protein}
+                    onChangeText={(value) => updateMealItem(item.id, 'protein', value)}
+                    placeholder="0"
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+              
+              <View style={styles.nutritionRow}>
+                <View style={styles.nutritionInput}>
+                  <Text style={styles.label}>Carbs (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={item.carbs}
+                    onChangeText={(value) => updateMealItem(item.id, 'carbs', value)}
+                    placeholder="0"
+                    keyboardType="numeric"
+                  />
+                </View>
+                
+                <View style={styles.nutritionInput}>
+                  <Text style={styles.label}>Fat (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={item.fat}
+                    onChangeText={(value) => updateMealItem(item.id, 'fat', value)}
+                    placeholder="0"
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+            </View>
+          ))}
+          
+          <TouchableOpacity 
+            style={styles.addItemButton}
+            onPress={addMealItem}
+          >
+            <Ionicons name="add-circle-outline" size={20} color="#4CAF50" />
+            <Text style={styles.addItemButtonText}>Add Another Food Item</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
 
   // Load real meals from Supabase
   useEffect(() => {
@@ -213,24 +584,20 @@ export default function Meals() {
       </View>
 
       <FlatList
-        style={styles.list}
         data={mealHistory}
         renderItem={renderDaySection}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={() => (
+          <TouchableOpacity style={styles.addMealButton} onPress={openAddMealModal}>
+            <Text style={styles.addMealButtonText}>+ Log New Meal</Text>
+          </TouchableOpacity>
+        )}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
             colors={['#4CAF50']}
           />
-        }
-        ListHeaderComponent={
-          <TouchableOpacity 
-            style={styles.addMealButton}
-            onPress={navigateToAddMeal}
-          >
-            <Text style={styles.addMealButtonText}>+ Log New Meal</Text>
-          </TouchableOpacity>
         }
         removeClippedSubviews={true}
         maxToRenderPerBatch={3}
@@ -240,6 +607,7 @@ export default function Meals() {
           {length: 200, offset: 200 * index, index}
         )}
       />
+      {renderAddMealModal()}
     </View>
   );
 }
@@ -248,6 +616,159 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+    padding: 16,
+  },
+  // Add meal modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    padding: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  saveButton: {
+    padding: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  modalContent: {
+    flex: 1,
+    padding: 16,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#555',
+    marginBottom: 4,
+  },
+  input: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  imageSection: {
+    marginBottom: 24,
+  },
+  imageButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+  },
+  imageButton: {
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    padding: 16,
+    width: '45%',
+  },
+  imageButtonText: {
+    marginTop: 8,
+    color: '#4CAF50',
+    fontWeight: 'bold',
+  },
+  analyzingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  analyzingText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#555',
+  },
+  imagePreviewContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  imagePreview: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    resizeMode: 'cover',
+  },
+  foodCoachContainer: {
+    marginBottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  foodCoachTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 16,
+  },
+  mealItemContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  mealItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  mealItemTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  removeButton: {
+    padding: 4,
+  },
+  nutritionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  nutritionInput: {
+    width: '48%',
+  },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 24,
+  },
+  addItemButtonText: {
+    marginLeft: 8,
+    color: '#4CAF50',
+    fontWeight: 'bold',
   },
   header: {
     padding: 20,
