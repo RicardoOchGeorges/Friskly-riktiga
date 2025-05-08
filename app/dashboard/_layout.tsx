@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { View, Text } from 'react-native';
 
 export default function DashboardLayout() {
   return (
@@ -43,11 +44,29 @@ export default function DashboardLayout() {
         }}
       />
       <Tabs.Screen
-        name="rewards"
+        name="coaches"
         options={{
-          title: 'Rewards',
+          title: 'Coaches',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="gift-outline" size={size} color={color} />
+            <Ionicons name="fitness-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="partners"
+        options={{
+          title: 'Partners',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="people-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="challenges"
+        options={{
+          title: 'Challenges',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="trophy-outline" size={size} color={color} />
           ),
         }}
       />
