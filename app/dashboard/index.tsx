@@ -1,7 +1,10 @@
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Dashboard() {
+  const router = useRouter();
+  
   // Mock data for the dashboard
   const caloriesConsumed = 1250;
   const caloriesGoal = 2000;
@@ -12,6 +15,10 @@ export default function Dashboard() {
   const carbsGoal = 200;
   const fatConsumed = 45;
   const fatGoal = 65;
+  
+  const handleProfilePress = () => {
+    router.push('/dashboard/profile');
+  };
 
   // Mock meal data
   const meals = [
@@ -23,7 +30,13 @@ export default function Dashboard() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Today's Progress</Text>
+        <View style={styles.headerTop}>
+          <View style={{width: 32}} />
+          <Text style={styles.title}>Today's Progress</Text>
+          <TouchableOpacity onPress={handleProfilePress} style={styles.profileButton}>
+            <Ionicons name="person-circle-outline" size={32} color="white" />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.date}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
       </View>
 
@@ -175,6 +188,15 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 60,
     backgroundColor: '#4CAF50',
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  profileButton: {
+    padding: 5,
   },
   title: {
     fontSize: 24,
