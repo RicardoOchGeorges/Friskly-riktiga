@@ -1,8 +1,8 @@
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, FlatList, Modal, TextInput, Alert, ActivityIndicator, Image } from 'react-native';
-import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, FlatList, Alert, RefreshControl } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../lib/auth';
 import { supabase } from '../../lib/supabase';
-import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 
 // Define types for meal data
 interface Meal {
@@ -23,32 +23,12 @@ interface DaySection {
 
 export default function Meals() {
   const { user } = useAuth();
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
-  const [showAddMeal, setShowAddMeal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   
-  // Add meal state
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [mealName, setMealName] = useState('');
-  const [image, setImage] = useState<string | null>(null);
-  
-  // Define types for meal items
-  interface MealItem {
-    id: number;
-    name: string;
-    calories: string;
-    protein: string;
-    carbs: string;
-    fat: string;
-  }
-  
-  const [mealItems, setMealItems] = useState<MealItem[]>([
-    { id: 1, name: '', calories: '', protein: '', carbs: '', fat: '' }
-  ]);
-  
-  // Mock meal history data
-  const mealHistory: DaySection[] = [
+  // Meal history data
+  const [mealHistory, setMealHistory] = useState<DaySection[]>([
     {
       id: '1',
       date: 'Today',
@@ -76,172 +56,15 @@ export default function Meals() {
         { id: 9, name: 'Dinner', time: '6:45 PM', calories: 720, protein: 42, carbs: 65, fat: 28 },
       ]
     },
-  ];
+  ]);
 
-  // Launch camera to take a photo
-  const takePicture = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Sorry, we need camera permissions to make this work!');
-      return;
-    }
-    
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
-
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
-      analyzeImage();
-    }
-  };
-
-  // Pick an image from the gallery
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
-
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);
-      analyzeImage();
-    }
-  };
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadMeals();
+  }, []);
   
-  // Mock function to simulate AI image analysis
-  const analyzeImage = () => {
-    setIsAnalyzing(true);
-    
-    // Simulate API delay
-    setTimeout(() => {
-      setIsAnalyzing(false);
-      
-      // Simulate AI detection results
-      setMealName('Lunch');
-      setMealItems([
-        { id: 1, name: 'Grilled Chicken Breast', calories: '250', protein: '35', carbs: '0', fat: '12' },
-        { id: 2, name: 'Brown Rice', calories: '150', protein: '3', carbs: '32', fat: '1' },
-        { id: 3, name: 'Steamed Broccoli', calories: '55', protein: '4', carbs: '11', fat: '0' }
-      ]);
-    }, 2000);
-  };
-
-  const addMealItem = () => {
-    const newId = mealItems.length > 0 ? Math.max(...mealItems.map(item => item.id)) + 1 : 1;
-    setMealItems([...mealItems, { id: newId, name: '', calories: '', protein: '', carbs: '', fat: '' }]);
-  };
-
-  const updateMealItem = (id: number, field: string, value: string) => {
-    setMealItems(mealItems.map(item => 
-      item.id === id ? { ...item, [field]: value } : item
-    ));
-  };
-
-  const removeMealItem = (id: number) => {
-    setMealItems(mealItems.filter(item => item.id !== id));
-  };
-
-  // Calculate totals
-  const totalCalories = mealItems.reduce((sum, item) => sum + (parseInt(item.calories) || 0), 0);
-  const totalProtein = mealItems.reduce((sum, item) => sum + (parseInt(item.protein) || 0), 0);
-  const totalCarbs = mealItems.reduce((sum, item) => sum + (parseInt(item.carbs) || 0), 0);
-  const totalFat = mealItems.reduce((sum, item) => sum + (parseInt(item.fat) || 0), 0);
-
-  const resetAddMealForm = () => {
-    setMealName('');
-    setImage(null);
-    setMealItems([{ id: 1, name: '', calories: '', protein: '', carbs: '', fat: '' }]);
-    setIsAnalyzing(false);
-    setIsSaving(false);
-  };
-
-  const handleSave = async () => {
-    if (!user) {
-      Alert.alert('Error', 'You must be logged in to save meals');
-      return;
-    }
-    
-    if (!mealName) {
-      Alert.alert('Error', 'Please enter a meal name');
-      return;
-    }
-    
-    if (mealItems.length === 0 || (mealItems.length === 1 && !mealItems[0].name)) {
-      Alert.alert('Error', 'Please add at least one food item');
-      return;
-    }
-    
-    setIsSaving(true);
-    
-    try {
-      // Get current date and time
-      const now = new Date();
-      const mealDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
-      const mealTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
-      
-      // Insert meal record
-      const { data: mealData, error: mealError } = await supabase
-        .from('meals')
-        .insert({
-          user_id: user.id,
-          name: mealName,
-          meal_date: mealDate,
-          meal_time: mealTime,
-          total_calories: totalCalories,
-          total_protein: totalProtein,
-          total_carbs: totalCarbs,
-          total_fat: totalFat
-        })
-        .select();
-      
-      if (mealError) {
-        console.error('Error saving meal:', mealError);
-        Alert.alert('Error', 'Failed to save meal. Please try again.');
-        setIsSaving(false);
-        return;
-      }
-      
-      // Get the meal ID from the inserted record
-      const mealId = mealData[0].id;
-      
-      // Insert meal items
-      const mealItemsToInsert = mealItems
-        .filter(item => item.name.trim() !== '') // Filter out empty items
-        .map(item => ({
-          meal_id: mealId,
-          name: item.name,
-          calories: parseInt(item.calories) || 0,
-          protein: parseInt(item.protein) || 0,
-          carbs: parseInt(item.carbs) || 0,
-          fat: parseInt(item.fat) || 0
-        }));
-      
-      if (mealItemsToInsert.length > 0) {
-        const { error: itemsError } = await supabase
-          .from('meal_items')
-          .insert(mealItemsToInsert);
-        
-        if (itemsError) {
-          console.error('Error saving meal items:', itemsError);
-          Alert.alert('Warning', 'Meal saved but some items may not have been recorded.');
-        }
-      }
-      
-      Alert.alert('Success', 'Meal saved successfully!');
-      setShowAddMeal(false);
-      resetAddMealForm();
-      loadMeals(); // Refresh the meals list
-    } catch (error) {
-      console.error('Error in save process:', error);
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
-      setIsSaving(false);
-    }
+  const navigateToAddMeal = () => {
+    router.push('/dashboard/add-meal');
   };
 
   // Load real meals from Supabase
@@ -264,7 +87,59 @@ export default function Meals() {
         console.error('Error loading meals:', error);
       } else {
         console.log('Meals loaded:', data);
-        // Here you would transform the data and update state
+        
+        // Transform the data into the DaySection format
+        const mealsByDate = new Map<string, Meal[]>();
+        
+        data.forEach((meal: any) => {
+          const date = meal.meal_date;
+          const mealObj: Meal = {
+            id: meal.id,
+            name: meal.name,
+            time: meal.meal_time.substring(0, 5), // HH:MM format
+            calories: meal.total_calories,
+            protein: meal.total_protein,
+            carbs: meal.total_carbs,
+            fat: meal.total_fat
+          };
+          
+          if (mealsByDate.has(date)) {
+            mealsByDate.get(date)!.push(mealObj);
+          } else {
+            mealsByDate.set(date, [mealObj]);
+          }
+        });
+        
+        // Convert map to array of DaySections
+        const sections: DaySection[] = [];
+        let sectionId = 1;
+        
+        // Helper function to format the date
+        const formatDate = (dateStr: string) => {
+          const today = new Date().toISOString().split('T')[0];
+          const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+          
+          if (dateStr === today) return 'Today';
+          if (dateStr === yesterday) return 'Yesterday';
+          
+          // Format as Month Day, Year
+          const date = new Date(dateStr);
+          return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        };
+        
+        // Sort dates in descending order
+        const sortedDates = Array.from(mealsByDate.keys()).sort().reverse();
+        
+        sortedDates.forEach(date => {
+          const meals = mealsByDate.get(date) || [];
+          sections.push({
+            id: String(sectionId++),
+            date: formatDate(date),
+            meals: meals
+          });
+        });
+        
+        setMealHistory(sections);
       }
     } catch (error) {
       console.error('Error in loadMeals:', error);
@@ -274,7 +149,8 @@ export default function Meals() {
     }
   };
 
-  const renderMealItem = ({ item }: { item: Meal }) => (
+  // Memoized meal item component for better performance
+  const MealItem = React.memo(({ item }: { item: Meal }) => (
     <View style={styles.mealCard}>
       <View style={styles.mealHeader}>
         <Text style={styles.mealName}>{item.name}</Text>
@@ -303,18 +179,32 @@ export default function Meals() {
         </View>
       </View>
     </View>
-  );
+  ));
+  
+  const renderMealItem = ({ item }: { item: Meal }) => <MealItem item={item} />;
 
-  const renderDaySection = ({ item }: { item: DaySection }) => (
-    <View style={styles.daySection}>
-      <Text style={styles.dayTitle}>{item.date}</Text>
-      <FlatList
-        data={item.meals}
-        renderItem={renderMealItem}
-        keyExtractor={(item) => item.id.toString()}
-      />
-    </View>
-  );
+  // Memoized day section component for better performance
+  const DaySection = React.memo(({ item }: { item: DaySection }) => {
+    // Create a stable key extractor function
+    const keyExtractor = React.useCallback((meal: Meal) => meal.id.toString(), []);
+    
+    return (
+      <View style={styles.daySection}>
+        <Text style={styles.dayTitle}>{item.date}</Text>
+        <FlatList
+          data={item.meals}
+          renderItem={renderMealItem}
+          keyExtractor={keyExtractor}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          initialNumToRender={5}
+        />
+      </View>
+    );
+  });
+  
+  const renderDaySection = ({ item }: { item: DaySection }) => <DaySection item={item} />;
 
   return (
     <View style={styles.container}>
@@ -327,176 +217,29 @@ export default function Meals() {
         data={mealHistory}
         renderItem={renderDaySection}
         keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4CAF50']}
+          />
+        }
         ListHeaderComponent={
           <TouchableOpacity 
             style={styles.addMealButton}
-            onPress={() => {
-              resetAddMealForm();
-              setShowAddMeal(true);
-            }}
+            onPress={navigateToAddMeal}
           >
             <Text style={styles.addMealButtonText}>+ Log New Meal</Text>
           </TouchableOpacity>
         }
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        initialNumToRender={3}
+        getItemLayout={(data, index) => (
+          {length: 200, offset: 200 * index, index}
+        )}
       />
-      
-      {/* Add Meal Modal */}
-      <Modal
-        visible={showAddMeal}
-        animationType="slide"
-        onRequestClose={() => setShowAddMeal(false)}
-      >
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => setShowAddMeal(false)} style={styles.backButton}>
-              <Text style={styles.backButtonText}>← Back</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>Add Meal</Text>
-            <TouchableOpacity 
-              onPress={handleSave} 
-              style={styles.saveButton}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.saveButtonText}>Save</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.form}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Meal Name</Text>
-              <TextInput
-                style={styles.input}
-                value={mealName}
-                onChangeText={setMealName}
-                placeholder="Enter meal name"
-              />
-            </View>
-
-            <View style={styles.imageSection}>
-              <Text style={styles.label}>Add Image</Text>
-              <View style={styles.imageButtons}>
-                <TouchableOpacity onPress={takePicture} style={styles.imageButton}>
-                  <Text style={styles.imageButtonText}>Take Photo</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={pickImage} style={styles.imageButton}>
-                  <Text style={styles.imageButtonText}>Choose from Gallery</Text>
-                </TouchableOpacity>
-              </View>
-              {isAnalyzing && (
-                <View style={styles.analyzing}>
-                  <ActivityIndicator size="large" color="#4CAF50" />
-                  <Text style={styles.analyzingText}>Analyzing your meal...</Text>
-                </View>
-              )}
-              {image && (
-                <Image source={{ uri: image }} style={styles.mealImage} />
-              )}
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Food Items</Text>
-              {mealItems.map((item, index) => (
-                <View key={item.id} style={styles.foodItem}>
-                  <View style={styles.foodItemHeader}>
-                    <Text style={styles.foodItemNumber}>Item {index + 1}</Text>
-                    {mealItems.length > 1 && (
-                      <TouchableOpacity onPress={() => removeMealItem(item.id)}>
-                        <Text style={styles.removeButton}>Remove</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  
-                  <TextInput
-                    style={styles.input}
-                    value={item.name}
-                    onChangeText={(value) => updateMealItem(item.id, 'name', value)}
-                    placeholder="Food name"
-                  />
-                  
-                  <View style={styles.nutritionInputs}>
-                    <View style={styles.nutritionInput}>
-                      <Text style={styles.nutritionLabel}>Calories</Text>
-                      <TextInput
-                        style={styles.nutritionValue}
-                        value={item.calories}
-                        onChangeText={(value) => updateMealItem(item.id, 'calories', value)}
-                        keyboardType="numeric"
-                        placeholder="0"
-                      />
-                    </View>
-                    
-                    <View style={styles.nutritionInput}>
-                      <Text style={styles.nutritionLabel}>Protein (g)</Text>
-                      <TextInput
-                        style={styles.nutritionValue}
-                        value={item.protein}
-                        onChangeText={(value) => updateMealItem(item.id, 'protein', value)}
-                        keyboardType="numeric"
-                        placeholder="0"
-                      />
-                    </View>
-                    
-                    <View style={styles.nutritionInput}>
-                      <Text style={styles.nutritionLabel}>Carbs (g)</Text>
-                      <TextInput
-                        style={styles.nutritionValue}
-                        value={item.carbs}
-                        onChangeText={(value) => updateMealItem(item.id, 'carbs', value)}
-                        keyboardType="numeric"
-                        placeholder="0"
-                      />
-                    </View>
-                    
-                    <View style={styles.nutritionInput}>
-                      <Text style={styles.nutritionLabel}>Fat (g)</Text>
-                      <TextInput
-                        style={styles.nutritionValue}
-                        value={item.fat}
-                        onChangeText={(value) => updateMealItem(item.id, 'fat', value)}
-                        keyboardType="numeric"
-                        placeholder="0"
-                      />
-                    </View>
-                  </View>
-                </View>
-              ))}
-              
-              <TouchableOpacity onPress={addMealItem} style={styles.addItemButton}>
-                <Text style={styles.addItemButtonText}>+ Add Another Item</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.totals}>
-              <Text style={styles.totalsTitle}>Meal Totals</Text>
-              <View style={styles.totalsRow}>
-                <View style={styles.totalItem}>
-                  <Text style={styles.totalValue}>{totalCalories}</Text>
-                  <Text style={styles.totalLabel}>Calories</Text>
-                </View>
-                
-                <View style={styles.totalItem}>
-                  <Text style={styles.totalValue}>{totalProtein}g</Text>
-                  <Text style={styles.totalLabel}>Protein</Text>
-                </View>
-                
-                <View style={styles.totalItem}>
-                  <Text style={styles.totalValue}>{totalCarbs}g</Text>
-                  <Text style={styles.totalLabel}>Carbs</Text>
-                </View>
-                
-                <View style={styles.totalItem}>
-                  <Text style={styles.totalValue}>{totalFat}g</Text>
-                  <Text style={styles.totalLabel}>Fat</Text>
-                </View>
-              </View>
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -650,8 +393,33 @@ const styles = StyleSheet.create({
   mealImage: {
     width: '100%',
     height: 200,
-    borderRadius: 5,
+    borderRadius: 8,
     marginTop: 10,
+    marginBottom: 10,
+  },
+  imageActionButtons: {
+    marginBottom: 20,
+  },
+  reanalyzeButton: {
+    backgroundColor: '#4CAF50',
+    padding: 8,
+    borderRadius: 4,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  reanalyzeButtonText: {
+    color: 'white',
+    fontWeight: '500',
+  },
+  aiAdviceButton: {
+    backgroundColor: '#2196F3',
+    padding: 8,
+    borderRadius: 4,
+    alignItems: 'center',
+  },
+  aiAdviceButtonText: {
+    color: 'white',
+    fontWeight: '500',
   },
   foodItem: {
     backgroundColor: 'white',
@@ -661,6 +429,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ddd',
   },
+  // ... (rest of the styles remain the same)
   foodItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
