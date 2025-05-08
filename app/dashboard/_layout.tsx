@@ -43,15 +43,7 @@ export default function DashboardLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="coaches"
-        options={{
-          title: 'Coaches',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="fitness-outline" size={size} color={color} />
-          ),
-        }}
-      />
+
       <Tabs.Screen
         name="partners"
         options={{

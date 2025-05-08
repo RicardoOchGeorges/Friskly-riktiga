@@ -1,31 +1,34 @@
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Switch } from 'react-native';
-import { useState } from 'react';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../../lib/auth';
 
 export default function Profile() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [offlineMode, setOfflineMode] = useState(false);
-
-  // Mock user data
-  const user = {
-    name: 'Alex Johnson',
-    email: 'alex.johnson@example.com',
+  const [userProfile, setUserProfile] = useState({
+    name: user?.email?.split('@')[0] || 'User',
+    email: user?.email || 'No email available',
     goal: 'Weight Loss',
     startWeight: '85 kg',
     currentWeight: '80 kg',
     targetWeight: '75 kg',
     dietaryPreference: 'Standard',
     activityLevel: 'Moderately Active',
-    joinDate: 'May 1, 2025',
-  };
+    joinDate: user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown',
+  });
 
-  const handleLogout = () => {
-    // In a real app, this would handle logout logic with Supabase
-    // For now, we'll just navigate to the home screen
-    router.replace('/');
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      router.replace('/');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to log out. Please try again.');
+    }
   };
 
   return (
@@ -37,11 +40,11 @@ export default function Profile() {
       {/* User Info Card */}
       <View style={styles.userCard}>
         <View style={styles.userAvatar}>
-          <Text style={styles.userInitials}>{user.name.charAt(0)}</Text>
+          <Text style={styles.userInitials}>{userProfile.name.charAt(0)}</Text>
         </View>
-        <Text style={styles.userName}>{user.name}</Text>
-        <Text style={styles.userEmail}>{user.email}</Text>
-        <Text style={styles.userJoinDate}>Member since {user.joinDate}</Text>
+        <Text style={styles.userName}>{userProfile.name}</Text>
+        <Text style={styles.userEmail}>{userProfile.email}</Text>
+        <Text style={styles.userJoinDate}>Member since {userProfile.joinDate}</Text>
       </View>
 
       {/* Health Goals Card */}
@@ -50,22 +53,22 @@ export default function Profile() {
         
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Goal Type</Text>
-          <Text style={styles.infoValue}>{user.goal}</Text>
+          <Text style={styles.infoValue}>{userProfile.goal}</Text>
         </View>
         
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Starting Weight</Text>
-          <Text style={styles.infoValue}>{user.startWeight}</Text>
+          <Text style={styles.infoValue}>{userProfile.startWeight}</Text>
         </View>
         
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Current Weight</Text>
-          <Text style={styles.infoValue}>{user.currentWeight}</Text>
+          <Text style={styles.infoValue}>{userProfile.currentWeight}</Text>
         </View>
         
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Target Weight</Text>
-          <Text style={styles.infoValue}>{user.targetWeight}</Text>
+          <Text style={styles.infoValue}>{userProfile.targetWeight}</Text>
         </View>
         
         <TouchableOpacity style={styles.editButton}>
@@ -79,12 +82,12 @@ export default function Profile() {
         
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Dietary Preference</Text>
-          <Text style={styles.infoValue}>{user.dietaryPreference}</Text>
+          <Text style={styles.infoValue}>{userProfile.dietaryPreference}</Text>
         </View>
         
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Activity Level</Text>
-          <Text style={styles.infoValue}>{user.activityLevel}</Text>
+          <Text style={styles.infoValue}>{userProfile.activityLevel}</Text>
         </View>
         
         <TouchableOpacity style={styles.editButton}>
@@ -136,6 +139,35 @@ export default function Profile() {
         </View>
       </View>
 
+      {/* Account Information */}
+      <View style={styles.sectionCard}>
+        <Text style={styles.sectionTitle}>Account Information</Text>
+        
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>User ID</Text>
+          <Text style={styles.infoValue}>{user?.id ? user.id.substring(0, 8) + '...' : 'Not available'}</Text>
+        </View>
+        
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Email</Text>
+          <Text style={styles.infoValue}>{user?.email || 'Not available'}</Text>
+        </View>
+        
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Email Verified</Text>
+          <Text style={styles.infoValue}>{user?.email_confirmed_at ? 'Yes' : 'No'}</Text>
+        </View>
+        
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Account Created</Text>
+          <Text style={styles.infoValue}>{user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}</Text>
+        </View>
+        
+        <TouchableOpacity style={styles.editButton}>
+          <Text style={styles.editButtonText}>Change Password</Text>
+        </TouchableOpacity>
+      </View>
+      
       {/* Support & About */}
       <View style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>Support & About</Text>
