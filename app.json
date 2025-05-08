@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Friskly",
+    "slug": "friskly",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo-placeholder.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4CAF50"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.friskly.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4CAF50"
+      },
+      "package": "com.friskly.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "friskly",
+    "plugins": [
+      "expo-router"
+    ],
+    "description": "AI-powered calorie tracking app that uses image recognition to log meals, estimate nutrition, and provide coaching"
+  }
+}
