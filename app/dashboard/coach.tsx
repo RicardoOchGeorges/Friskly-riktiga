@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Dimensions } from 'react-native';
+import { Ionicons, FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getChatbotResponseStream, ChatMessage as ApiChatMessage } from '../../lib/openai-api';
+
+const { width } = Dimensions.get('window');
+const bubbleMaxWidth = width * 0.8;
 
 // Define types for chat messages
 interface ChatMessage {
@@ -133,14 +137,38 @@ export default function Coach() {
     }
   };
 
-  const renderChatItem = ({ item }: { item: ChatMessage }) => (
-    <View style={[
-      styles.messageBubble,
-      item.sender === 'user' ? styles.userBubble : styles.botBubble
-    ]}>
-      <Text style={styles.messageText}>{item.text}</Text>
-    </View>
-  );
+  // Enhanced render for chat messages with avatar and timestamp
+  const renderChatItem = ({ item }: { item: ChatMessage }) => {
+    const isUser = item.sender === 'user';
+    
+    return (
+      <View style={[styles.messageRow, isUser ? styles.userMessageRow : {}]}>
+        {!isUser && (
+          <View style={styles.avatarContainer}>
+            <Image 
+              source={require('../../assets/images/coach-avatar.jpg')} 
+              style={styles.avatar}
+            />
+          </View>
+        )}
+        
+        <View style={[
+          styles.messageBubble,
+          isUser ? styles.userBubble : styles.botBubble
+        ]}>
+          <Text style={[styles.messageText, isUser ? styles.userMessageText : {}]}>{item.text}</Text>
+        </View>
+      </View>
+    );
+  };
+  
+  // Quick suggestion prompts for the user
+  const suggestionPrompts = [
+    "Create a meal plan",
+    "Track my calories",
+    "Workout suggestions",
+    "Nutrition advice"
+  ];
 
   return (
     <KeyboardAvoidingView 
@@ -148,94 +176,219 @@ export default function Coach() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={100}
     >
-      <View style={styles.header}>
-        <Text style={styles.title}>AI Coach</Text>
-      </View>
+      <LinearGradient
+        colors={['#4CAF50', '#8BC34A']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>AI Coach</Text>
+          <Text style={styles.subtitle}>Your personal nutrition and fitness assistant</Text>
+        </View>
+      </LinearGradient>
 
-      <FlatList
-        style={styles.chatList}
-        data={chatHistory}
-        renderItem={renderChatItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.chatContent}
-        ref={ref => {
-          // Auto-scroll to the bottom when new messages arrive
-          if (ref && chatHistory.length > 0) {
-            ref.scrollToEnd({ animated: true });
-          }
-        }}
-      />
-      
-
-
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          value={message}
-          onChangeText={setMessage}
-          placeholder="Ask your AI coach a question..."
-          multiline
+      <View style={styles.mainContent}>
+        <FlatList
+          style={styles.chatList}
+          data={chatHistory}
+          renderItem={renderChatItem}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.chatContent}
+          ref={ref => {
+            // Auto-scroll to the bottom when new messages arrive
+            if (ref && chatHistory.length > 0) {
+              ref.scrollToEnd({ animated: true });
+            }
+          }}
         />
-        <TouchableOpacity 
-          style={styles.sendButton} 
-          onPress={sendMessage}
-          disabled={message.trim() === ''}
-        >
-          <Ionicons 
-            name="send" 
-            size={24} 
-            color={message.trim() === '' ? '#ccc' : '#4CAF50'} 
+        
+        {/* Quick Suggestion Prompts */}
+        {chatHistory.length <= 2 && (
+          <View style={styles.suggestionsContainer}>
+            <Text style={styles.suggestionsTitle}>What would you like help with?</Text>
+            <View style={styles.promptsContainer}>
+              {suggestionPrompts.map((prompt, index) => (
+                <TouchableOpacity 
+                  key={index} 
+                  style={styles.promptButton}
+                  onPress={() => {
+                    setMessage(prompt);
+                    // Optional: Auto-send the prompt
+                    // setMessage(prompt);
+                    // setTimeout(() => sendMessage(), 100);
+                  }}
+                >
+                  <Text style={styles.promptText}>{prompt}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            value={message}
+            onChangeText={setMessage}
+            placeholder="Ask your AI coach a question..."
+            multiline
+            placeholderTextColor="#999"
           />
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.sendButton} 
+            onPress={sendMessage}
+            disabled={message.trim() === ''}
+          >
+            <Ionicons 
+              name="send" 
+              size={24} 
+              color={message.trim() === '' ? '#ccc' : '#4CAF50'} 
+            />
+          </TouchableOpacity>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  // Core container styles
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9fa',
   },
+  mainContent: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    marginTop: -20,
+    paddingTop: 10,
+    overflow: 'hidden',
+  },
+  
+  // Header styles
   header: {
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#4CAF50',
+    paddingBottom: 40,
+  },
+  headerContent: {
+    alignItems: 'center',
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: 'bold',
     color: 'white',
+    textAlign: 'center',
   },
+  subtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  
+  // Chat list styles
   chatList: {
     flex: 1,
   },
   chatContent: {
     padding: 15,
+    paddingBottom: 30,
+  },
+  messageRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    alignItems: 'flex-end',
+  },
+  userMessageRow: {
+    justifyContent: 'flex-end',
+  },
+  avatarContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginRight: 8,
+    backgroundColor: '#EBF5EB',
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
   },
   messageBubble: {
-    maxWidth: '80%',
-    padding: 12,
+    maxWidth: bubbleMaxWidth,
+    padding: 14,
     borderRadius: 18,
-    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   userBubble: {
     backgroundColor: '#E8F5E9',
-    alignSelf: 'flex-end',
-    borderBottomRightRadius: 5,
+    borderBottomRightRadius: 4,
   },
   botBubble: {
     backgroundColor: 'white',
-    alignSelf: 'flex-start',
-    borderBottomLeftRadius: 5,
+    borderBottomLeftRadius: 4,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 22,
+    color: '#333',
   },
+  userMessageText: {
+    color: '#1B5E20',
+  },
+  
+  // Suggestion prompts styles
+  suggestionsContainer: {
+    marginHorizontal: 15,
+    marginBottom: 15,
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  suggestionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    color: '#333',
+  },
+  promptsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+  },
+  promptButton: {
+    backgroundColor: '#F1F8E9',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#DCEDC8',
+  },
+  promptText: {
+    color: '#33691E',
+    fontSize: 14,
+  },
+  
+  // Input styles
   inputContainer: {
     flexDirection: 'row',
     padding: 10,
+    paddingHorizontal: 15,
     backgroundColor: 'white',
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
@@ -247,12 +400,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 10,
     maxHeight: 100,
+    fontSize: 16,
+    color: '#333',
   },
   sendButton: {
     alignSelf: 'flex-end',
     marginLeft: 10,
     padding: 10,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 20,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  
+  // Thinking animation
   thinkingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
